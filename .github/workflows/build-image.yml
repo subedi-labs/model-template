@@ -1,4 +1,4 @@
-name: Build App
+name: Build Image
 
 on:
   push:
@@ -8,7 +8,7 @@ jobs:
   build:
     uses: subedi-labs/platform/.github/workflows/build-image-buildpacks.yml@main
     with:
-      image_name: my-app
+      image_name: TEST-image
       image_tag: ''
       builder: ''
       working_directory: '.'
