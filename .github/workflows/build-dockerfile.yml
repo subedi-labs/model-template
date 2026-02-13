@@ -1,73 +1,159 @@
-name: Build Model Container
+name: Generate Dockerfile
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      config_file:
+        description: 'Path to the Docker configuration file'
+        required: false
+        type: string
+        default: 'dockerfile.config.yml'
+
+    outputs:
+      dockerfile_sha:
+        description: 'SHA256 hash of generated Dockerfile'
+        value: ${{ jobs.generate.outputs.dockerfile_sha }}
+      
+      commit_sha:
+        description: 'Commit SHA of the Dockerfile commit'
+        value: ${{ jobs.generate.outputs.commit_sha }}
 
 jobs:
-  generate-dockerfile:
-    name: Generate Dockerfile
-    uses: subedi-labs/platform/.github/workflows/generate-dockerfile.yml@main
-    with:
-      base_image: 'python:3.11-slim'
-      app_name: 'my-ml-model'
-      requirements_file: 'requirements.txt'
-      cmd: '"python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"'
-      exposed_port: '8080'
-      health_check_path: '/health'
-    permissions:
-      contents: write
-
-  build-image:
-    name: Build Docker Image
-    needs: generate-dockerfile
+  generate:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
+      contents: write
+    
+    outputs:
+      dockerfile_sha: ${{ steps.generate.outputs.dockerfile_sha }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
     
     steps:
-      - name: Checkout repository
+      - name: Checkout caller repository
         uses: actions/checkout@v4
         with:
-          ref: main  # Get latest with committed Dockerfile
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Read configuration and generate Dockerfile
+        id: generate
+        run: |
+          set -euo pipefail
+          
+          CONFIG_FILE="${{ inputs.config_file }}"
+          
+          if [[ ! -f "$CONFIG_FILE" ]]; then
+            echo "❌ Configuration file not found: $CONFIG_FILE"
+            exit 1
+          fi
+          
+          echo "📖 Reading configuration from $CONFIG_FILE"
+          
+          # Parse YAML config using yq
+          APP_NAME=$(yq -r '.app_name // "app"' "$CONFIG_FILE")
+          BASE_IMAGE=$(yq -r '.base_image // "python:3.11-slim"' "$CONFIG_FILE")
+          REQUIREMENTS_FILE=$(yq -r '.requirements_file // "requirements.txt"' "$CONFIG_FILE")
+          CMD=$(yq -r '.cmd // "\"python\", \"main.py\""' "$CONFIG_FILE")
+          EXPOSED_PORT=$(yq -r '.exposed_port // "8080"' "$CONFIG_FILE")
+          ADDITIONAL_PACKAGES=$(yq -r '.additional_packages // "curl"' "$CONFIG_FILE")
+          HEALTH_CHECK_PATH=$(yq -r '.health_check_path // "/health"' "$CONFIG_FILE")
+          
+          echo "✅ Configuration loaded:"
+          echo "   app_name: $APP_NAME"
+          echo "   base_image: $BASE_IMAGE"
+          echo "   requirements_file: $REQUIREMENTS_FILE"
+          echo "   cmd: $CMD"
+          echo "   exposed_port: $EXPOSED_PORT"
+          echo "   additional_packages: $ADDITIONAL_PACKAGES"
+          echo "   health_check_path: $HEALTH_CHECK_PATH"
+          
+          # Extract Python version from base image for site-packages path
+          PYTHON_VERSION=$(echo "$BASE_IMAGE" | grep -oP 'python:\K[0-9]+\.[0-9]+' || echo "3.11")
+          
+          # Generate Dockerfile
+          cat > Dockerfile << EOF
+          # =============================================================================
+          # Auto-generated Dockerfile
+          # Generated from: $CONFIG_FILE
+          # =============================================================================
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # =============================================================================
+          # Stage 1: Builder
+          # =============================================================================
+          FROM ${BASE_IMAGE} AS builder
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=sha,prefix=sha-
-            type=raw,value=latest
+          LABEL org.opencontainers.image.title="${APP_NAME}"
 
-      - name: Build and push
-        id: build-push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Install system dependencies
+          RUN apt-get update && apt-get install -y --no-install-recommends \\
+              ${ADDITIONAL_PACKAGES} \\
+              && rm -rf /var/lib/apt/lists/*
 
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.build-push.outputs.digest }}
-          push-to-registry: true
+          WORKDIR /app
+
+          # Install Python dependencies
+          COPY ${REQUIREMENTS_FILE} .
+          RUN pip install --no-cache-dir --upgrade pip && \\
+              pip install --no-cache-dir -r ${REQUIREMENTS_FILE}
+
+          # Copy application code
+          COPY . .
+
+          # =============================================================================
+          # Stage 2: Production
+          # =============================================================================
+          FROM ${BASE_IMAGE} AS production
+
+          WORKDIR /app
+
+          # Install curl for health checks
+          RUN apt-get update && apt-get install -y --no-install-recommends curl \\
+              && rm -rf /var/lib/apt/lists/*
+
+          # Copy installed packages and application from builder
+          COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
+          COPY --from=builder /usr/local/bin /usr/local/bin
+          COPY --from=builder /app /app
+
+          # Expose port
+          EXPOSE ${EXPOSED_PORT}
+
+          # Health check
+          HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\
+              CMD curl -f http://localhost:${EXPOSED_PORT}${HEALTH_CHECK_PATH} || exit 1
+
+          # Create non-root user for security
+          RUN addgroup --system --gid 1001 appgroup && \\
+              adduser --system --uid 1001 --gid 1001 appuser && \\
+              chown -R appuser:appgroup /app
+          USER appuser
+
+          CMD [${CMD}]
+          EOF
+          
+          # Calculate SHA
+          DOCKERFILE_SHA=$(sha256sum Dockerfile | cut -d' ' -f1)
+          echo "dockerfile_sha=${DOCKERFILE_SHA}" >> "$GITHUB_OUTPUT"
+          
+          echo ""
+          echo "✅ Generated Dockerfile:"
+          echo "----------------------------------------"
+          cat Dockerfile
+
+      - name: Commit Dockerfile
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if Dockerfile changed
+          if git diff --quiet Dockerfile 2>/dev/null; then
+            echo "ℹ️ No changes to Dockerfile"
+            echo "commit_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            git add Dockerfile
+            git commit -m "chore: auto-generate Dockerfile [skip ci]"
+            git push origin main
+            echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "✅ Dockerfile committed to main"
+          fi
