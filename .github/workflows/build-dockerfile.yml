@@ -1,60 +1,26 @@
-name: Build Docker Image
+name: Build Model Container
 
 on:
-  workflow_call:
-    inputs:
-      dockerfile_artifact:
-        description: 'Name of artifact containing Dockerfile'
-        required: false
-        type: string
-        default: ''
-      
-      dockerfile_path:
-        description: 'Path to Dockerfile (if not using artifact)'
-        required: false
-        type: string
-        default: 'Dockerfile'
-      
-      context:
-        description: 'Docker build context'
-        required: false
-        type: string
-        default: '.'
-      
-      image_name:
-        description: 'Docker image name'
-        required: true
-        type: string
-      
-      push:
-        description: 'Push image to registry'
-        required: false
-        type: boolean
-        default: true
-      
-      platforms:
-        description: 'Target platforms (comma-separated)'
-        required: false
-        type: string
-        default: 'linux/amd64'
-      
-      build_args:
-        description: 'Build arguments (multiline KEY=VALUE)'
-        required: false
-        type: string
-        default: ''
-
-    outputs:
-      image_digest:
-        description: 'Docker image digest'
-        value: ${{ jobs.build.outputs.digest }}
-      
-      image_tags:
-        description: 'Docker image tags'
-        value: ${{ jobs.build.outputs.tags }}
+  push:
+    branches: [main]
 
 jobs:
-  build:
+  generate-dockerfile:
+    name: Generate Dockerfile
+    uses: your-org/platform-repo/.github/workflows/generate-dockerfile.yml@main
+    with:
+      base_image: 'python:3.11-slim'
+      app_name: 'my-ml-model'
+      requirements_file: 'requirements.txt'
+      cmd: '"python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"'
+      exposed_port: '8080'
+      health_check_path: '/health'
+    permissions:
+      contents: write
+
+  build-image:
+    name: Build Docker Image
+    needs: generate-dockerfile
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -62,23 +28,11 @@ jobs:
       attestations: write
       id-token: write
     
-    outputs:
-      digest: ${{ steps.build-push.outputs.digest }}
-      tags: ${{ steps.meta.outputs.tags }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download Dockerfile artifact
-        if: inputs.dockerfile_artifact != ''
-        uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.dockerfile_artifact }}
-          path: .
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          ref: main  # Get latest with committed Dockerfile
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -94,31 +48,26 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ inputs.image_name }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=sha,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Build and push
         id: build-push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile_path }}
-          platforms: ${{ inputs.platforms }}
-          push: ${{ inputs.push }}
+          context: .
+          file: Dockerfile
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: ${{ inputs.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Generate artifact attestation
-        if: inputs.push == true
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ghcr.io/${{ inputs.image_name }}
+          subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
           push-to-registry: true
