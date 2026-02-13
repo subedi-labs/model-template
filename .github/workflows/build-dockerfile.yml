@@ -7,7 +7,7 @@ on:
 jobs:
   generate-dockerfile:
     name: Generate Dockerfile
-    uses: your-org/platform-repo/.github/workflows/generate-dockerfile.yml@main
+    uses: subedi-labs/platform/.github/workflows/generate-dockerfile.yml@main
     with:
       base_image: 'python:3.11-slim'
       app_name: 'my-ml-model'
