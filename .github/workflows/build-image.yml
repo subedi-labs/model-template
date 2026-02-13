@@ -9,7 +9,7 @@ jobs:
     uses: subedi-labs/platform/.github/workflows/build-image-buildpacks.yml@main
     with:
       image_name: my-app
-      env_vars:
+      env_vars: ""
     permissions:
       contents: read
       packages: write
