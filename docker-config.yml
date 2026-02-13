@@ -1,6 +1,6 @@
 # Dockerfile Configuration
 # Fill out these values for your Python model
 
-python_version: "3.10"
+python_version: "3.11"
 model_entrypoint: "app.py"
 port: "8080"

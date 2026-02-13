@@ -1,42 +1,10 @@
-# Workflow that calls the platform's Dockerfile generator
-
 name: Build Dockerfile
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'dockerfile-config.yaml'
-      - 'requirements.txt'
   workflow_dispatch:
 
 jobs:
-  read-config:
-    runs-on: ubuntu-latest
-    outputs:
-      python_version: ${{ steps.config.outputs.python_version }}
-      model_entrypoint: ${{ steps.config.outputs.model_entrypoint }}
-      port: ${{ steps.config.outputs.port }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Read config
-        id: config
-        run: |
-          # Parse the YAML config file
-          echo "python_version=$(yq '.python_version' dockerfile-config.yaml)" >> $GITHUB_OUTPUT
-          echo "model_entrypoint=$(yq '.model_entrypoint' dockerfile-config.yaml)" >> $GITHUB_OUTPUT
-          echo "port=$(yq '.port // "8080"' dockerfile-config.yaml)" >> $GITHUB_OUTPUT
-
   generate:
-    needs: read-config
     uses: subedi-labs/platform/.github/workflows/generate-dockerfile.yml@main
-    with:
-      python_version: ${{ needs.read-config.outputs.python_version }}
-      model_entrypoint: ${{ needs.read-config.outputs.model_entrypoint }}
-      port: ${{ needs.read-config.outputs.port }}
