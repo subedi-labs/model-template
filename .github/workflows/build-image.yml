@@ -1,6 +1,8 @@
 name: Build Image
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -10,6 +12,7 @@ jobs:
     uses: subedi-labs/platform/.github/workflows/build-image-buildpacks.yml@main
     with:
       image_name: test-image
+      publish: ${{ github.event_name == 'push' }}
     permissions:
       contents: read
       packages: write
