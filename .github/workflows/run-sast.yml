@@ -1,4 +1,4 @@
-name: Run SAST scans
+name: Run SAST
 
 on:
   pull_request:
