@@ -3,6 +3,11 @@ name: Run SAST
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "**/*.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - README.md
 
 jobs:
   codeql:
