@@ -1,0 +1,19 @@
+name: Run SAST
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "**/*.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - '**/*.md'
+      - '**/*.txt'
+
+jobs:
+  codeql:
+    uses: subedi-labs/platform/.github/workflows/scan-codeql.yml@main
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
