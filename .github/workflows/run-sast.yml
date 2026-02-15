@@ -7,7 +7,8 @@ on:
       - "**/*.py"
       - "requirements*.txt"
       - "pyproject.toml"
-      - README.md
+      - '**/*.md'
+      - '**/*.txt'
 
 jobs:
   codeql:
