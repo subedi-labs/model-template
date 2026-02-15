@@ -11,5 +11,4 @@ jobs:
       contents: read
       security-events: write
     with:
-      # Empty unless custom queries needed
-      config_file: ""
+      languages: "python,javascript-typescript"
