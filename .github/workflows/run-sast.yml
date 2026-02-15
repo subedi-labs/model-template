@@ -1,36 +1,15 @@
-name: "CodeQL Security Scan"
+name: Run SAST scans
 
 on:
   pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.txt'
-      - '**/*.rst'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
-      - 'CHANGELOG*'
-      - 'CONTRIBUTING*'
-      - '.github/*.md'
-      - 'images/**'
-      - '**/*.png'
-      - '**/*.jpg'
-      - '**/*.svg'
-      - '**/*.gif'
-
-concurrency:
-  group: codeql-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+    branches: [ "main" ]
 
 jobs:
   codeql:
-    name: CodeQL Scan
     uses: subedi-labs/platform/.github/workflows/scan-codeql.yml@main
-    with:
-      language: 'python'
-      python-version: '3.12'
     permissions:
-      security-events: write
       contents: read
-      actions: read
+      security-events: write
+    with:
+      # Empty unless custom queries needed
+      config_file: ""
