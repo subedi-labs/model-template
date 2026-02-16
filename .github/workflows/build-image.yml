@@ -7,12 +7,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  actions: read
+
 jobs:
   build:
     uses: subedi-labs/platform/.github/workflows/build-image-buildpacks.yml@main
     with:
-      image_name: test-image
+      image_name: ${{ github.event.repository.name }}
       publish: ${{ github.event_name == 'push' }}
-    permissions:
-      contents: read
-      packages: write
